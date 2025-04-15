@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Env
+.env
+*.env
+# Virtual environments
+env/
+.venv/
+
+
+# PDF temp files
+temp_*.pdf
+*.log
+
+# PyMuPDF artifacts
+*.pbm
+*.ppm
+*.pnm
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

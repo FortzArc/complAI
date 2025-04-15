@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pdfminer.six
+python-dotenv
+openai
+langchain
+langchain-community
+faiss-cpu
+tiktoken
+streamlit
+requests
