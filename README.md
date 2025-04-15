@@ -4,4 +4,5 @@ ComplAI an AI-powered healthcare compliance assistant that analyzes CMS-1500 cla
 
 ## To spin up an env:
 python -m venv env
+
 pip install -r requirements.txt
