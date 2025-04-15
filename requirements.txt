@@ -1,6 +1,7 @@
 fastapi
 uvicorn
 pdfminer.six
+pypdf
 python-dotenv
 openai
 langchain
@@ -9,3 +10,10 @@ faiss-cpu
 tiktoken
 streamlit
 requests
+pytesseract
+Pillow
+PyMuPDF
+reportlab
+scikit-learn
+numpy
+jinja2
