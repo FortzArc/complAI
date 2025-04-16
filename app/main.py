@@ -107,7 +107,7 @@ async def query_doc(question: str = Form(...)):
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-
+from app.utils.cms1500_parser import extract_cpt_and_modifiers_from_pdf
 @app.post("/modifier-check")
 async def modifier_compliance_check(file: UploadFile = File(...)):
     global VECTORSTORE
@@ -120,7 +120,7 @@ async def modifier_compliance_check(file: UploadFile = File(...)):
         f.write(contents)
 
     try:
-        cpt_mod_pairs = extract_cpt_modifiers_and_icd_from_pdf(temp_path)
+        cpt_mod_pairs = extract_cpt_and_modifiers_from_pdf(temp_path)
         os.remove(temp_path)
 
         qa_chain = build_qa_chain(VECTORSTORE)
@@ -184,52 +184,59 @@ def run_generic_compliance_check(text, vectorstore, prompt_template, extract_inf
     return results
 
 
+from fastapi import UploadFile, File
+from fastapi.responses import JSONResponse
+from app.utils.cms1500_parser import extract_cpt_modifiers_and_icd_from_pdf
+
 @app.post("/necessity-check")
 async def medical_necessity_check(file: UploadFile = File(...)):
-    from app.utils.cms1500_parser import extract_cpt_modifiers_and_icd_from_pdf
     global VECTORSTORE
     if VECTORSTORE is None:
         return {"error": "No vectorstore loaded. Please embed necessity policy PDF first."}
 
+    # Save uploaded file temporarily
     contents = await file.read()
     temp_path = f"temp_{file.filename}"
     with open(temp_path, "wb") as f:
         f.write(contents)
 
     try:
-        parsed = extract_cpt_modifiers_and_icd_from_pdf(temp_path)
-        os.remove(temp_path)
+        # Extract CPT and ICD codes
+        data = extract_cpt_modifiers_and_icd_from_pdf(temp_path)
+        cpt_entries = data.get("cpt_data", [])
+        icd_codes = data.get("icd_codes", [])
 
-        cpt_data = parsed["cpt_data"]
-        icd_codes = parsed["icd_codes"]
+        # ✅ Log what was found
+        print(f"[CMS1500 PARSER] CPTs found: {[entry['cpt'] for entry in cpt_entries]}")
+        print(f"[CMS1500 PARSER] ICDs found: {icd_codes}")
 
-        qa_chain = build_qa_chain(VECTORSTORE)
+        if not cpt_entries or not icd_codes:
+            return {"error": "No CPT or ICD codes found in the form."}
+
         results = []
 
-        for item in cpt_data:
-            cpt = item["cpt"]
-            question = (
-                f"You are a senior healthcare billing compliance auditor.\n\n"
-                f"Evaluate whether CPT code {cpt} meets CMS medical necessity requirements.\n"
-                f"The associated ICD-10 codes listed in the CMS-1500 claim are: {', '.join(icd_codes)}.\n"
-                f"- Does one or more ICD codes justify the CPT service?\n"
-                f"- Is documentation likely sufficient (e.g. prescription, progress note)?\n"
-                f"Respond with: High Risk, Medium Risk, or Low Risk, and a 1–2 sentence justification."
-            )
+        # Cross-check each CPT–ICD pair using vector search
+        for entry in cpt_entries:
+            cpt = entry["cpt"]
+            for icd in icd_codes:
+                query = f"Does CPT code {cpt} require or allow ICD code {icd}?"
+                retrieved_docs = VECTORSTORE.similarity_search(query, k=3)
 
-            answer = qa_chain.run(question)
-            results.append({
-                "cpt": cpt,
-                "icd_codes": icd_codes,
-                "question": question,
-                "answer": answer
-            })
+                # Basic match heuristic
+                match_found = any(
+                    cpt in doc.page_content and icd in doc.page_content
+                    for doc in retrieved_docs
+                )
 
-        return {
-            "filename": file.filename,
-            "total_checks": len(results),
-            "results": results
-        }
+                results.append({
+                    "cpt": cpt,
+                    "icd": icd,
+                    "query": query,
+                    "match_found": match_found,
+                    "supporting_docs": [doc.page_content for doc in retrieved_docs]
+                })
+
+        return JSONResponse(content={"results": results})
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})

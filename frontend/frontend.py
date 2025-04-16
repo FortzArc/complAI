@@ -39,41 +39,64 @@ def upload_reference(label, key_suffix):
                 st.text(res.text)
     return
 
-# ================================
-# Shared: CMS-1500 Upload Section
-# ================================
 def upload_claim_and_check(api_path, key_suffix):
     st.subheader("Step 2: Upload CMS-1500 Claim Form")
     cms_pdf = st.file_uploader("Upload CMS-1500 PDF", type=["pdf"], key=f"cms_upload_{key_suffix}")
+    
     if cms_pdf and st.button("Run Compliance Check", key=f"check_btn_{key_suffix}"):
         with st.spinner("Running compliance check..."):
             files = {"file": (cms_pdf.name, cms_pdf, "application/pdf")}
             res = requests.post(f"{API_BASE}/{api_path}", files=files)
+
             if res.status_code == 200:
                 result = res.json()
                 results = result.get("results", [])
 
                 if results:
-                    st.success(f"✅ Found {len(results)} issues to evaluate.")
+                    st.success(f"✅ Found {len(results)} item(s) to evaluate.")
                     for i, item in enumerate(results, 1):
                         st.markdown("----")
                         st.markdown(f"### 🧾 Finding #{i}")
+
                         if "cpt" in item:
                             st.markdown(f"**CPT Code:** `{item['cpt']}`")
-                        if "modifier" in item:
-                            st.markdown(f"**Modifier:** `{item['modifier']}`")
+                        
+                        if "modifiers" in item and isinstance(item["modifiers"], list):
+                            mods = ", ".join(item["modifiers"])
+                            st.markdown(f"**Modifiers:** `{mods}`")
+
+                        if "icd" in item:
+                            st.markdown(f"**ICD Code:** `{item['icd']}`")
+                        
+                        if "query" in item:
+                            st.markdown("**Query:**")
+                            st.code(item["query"])
+
                         if "question" in item:
                             st.markdown("**Question Asked:**")
                             st.code(item["question"])
+                        
+                        if "match_found" in item:
+                            if item["match_found"]:
+                                st.success("✅ Match found in policy reference.")
+                            else:
+                                st.warning("⚠️ No clear match found for this CPT–ICD pair.")
+                        
                         if "answer" in item:
                             st.markdown("**AI Compliance Evaluation:**")
                             st.write(item["answer"])
+                        
+                        if "supporting_docs" in item:
+                            st.markdown("**Supporting Docs:**")
+                            for doc in item["supporting_docs"]:
+                                st.markdown(f"- {doc[:300]}...")  # Show preview
                 else:
-                    st.warning("⚠️ No issues found or no compliance results returned.")
+                    st.warning("⚠️ No results returned from compliance check.")
             else:
                 st.error("❌ Compliance check failed.")
                 st.text(res.text)
-    return
+
+
 
 # ================================
 # CASE: General Q&A
@@ -114,7 +137,10 @@ elif selected_case == "🧾 Modifier Misuse":
 elif selected_case == "📋 Medical Necessity Check":
     st.markdown("Evaluate if procedures on a claim meet medical necessity criteria.")
     upload_reference("Upload Medical Necessity Guidelines", "necessity")
+    
+    # Use the tailored upload+check function for necessity
     upload_claim_and_check("necessity-check", "necessity")
+
 
 # ================================
 # CASE: Code-Modifier Pairing Errors
