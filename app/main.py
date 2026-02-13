@@ -4,7 +4,10 @@ from pdfminer.high_level import extract_text
 from app.utils.text_chunker import chunk_text
 from app.utils.embedding import get_embedding_model, create_vectorstore
 from app.utils.rag import build_qa_chain
-from app.utils.cms1500_parser import extract_cpt_modifiers_and_icd_from_pdf
+from app.utils.cms1500_parser import (
+    extract_cpt_modifiers_and_icd_from_pdf,
+    extract_fields_from_image  # Added import for OCR function
+)
 from dotenv import load_dotenv
 import os
 
@@ -25,24 +28,35 @@ def extract_text_with_ocr_fallback(temp_path):
     text = extract_text(temp_path)
     if not text.strip():
         try:
+            # Added better error handling for OCR fallback
+            if not os.path.exists(temp_path):
+                raise FileNotFoundError("Input file not found")
+                
             parsed = extract_fields_from_image(temp_path)
+            if not parsed:
+                raise ValueError("OCR extraction returned no results")
+                
             text = f"""
             📄 OCR EXTRACTED TEXT (Structured):
             Raw CPT Text:
-            {parsed['raw_cpt_text']}
+            {parsed.get('raw_cpt_text', 'Not found')}
 
             Raw ICD Text:
-            {parsed['raw_icd_text']}
+            {parsed.get('raw_icd_text', 'Not found')}
 
             Detected CPT Codes:
-            {', '.join(parsed['cpt_codes'])}
+            {', '.join(parsed.get('cpt_codes', []))}
 
             Detected ICD Codes:
-            {', '.join(parsed['icd_codes'])}
+            {', '.join(parsed.get('icd_codes', []))}
             """
             print(text)
+        except FileNotFoundError as e:
+            raise RuntimeError(f"OCR fallback failed - file error: {e}")
+        except ValueError as e:
+            raise RuntimeError(f"OCR fallback failed - extraction error: {e}")
         except Exception as e:
-            raise RuntimeError(f"OCR fallback failed: {e}")
+            raise RuntimeError(f"OCR fallback failed - unexpected error: {e}")
     else:
         print("📄 Text extracted via pdfminer")
     return text
