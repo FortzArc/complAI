@@ -12,10 +12,12 @@ from langchain.vectorstores import FAISS
 from PIL import Image
 
 
-# Load environment variables
 load_dotenv()
 
-# In-memory vector store
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY environment variable is required but not set")
+
 VECTORSTORE = None
 
 app = FastAPI()
@@ -166,7 +168,6 @@ async def modifier_compliance_check(file: UploadFile = File(...)):
 
 
 
-# Shared logic for general business cases
 def run_generic_compliance_check(text, vectorstore, prompt_template, extract_info=None):
     qa_chain = build_qa_chain(vectorstore)
     results = []
@@ -194,19 +195,16 @@ async def medical_necessity_check(file: UploadFile = File(...)):
     if VECTORSTORE is None:
         return {"error": "No vectorstore loaded. Please embed necessity policy PDF first."}
 
-    # Save uploaded file temporarily
     contents = await file.read()
     temp_path = f"temp_{file.filename}"
     with open(temp_path, "wb") as f:
         f.write(contents)
 
     try:
-        # Extract CPT and ICD codes
         data = extract_cpt_modifiers_and_icd_from_pdf(temp_path)
         cpt_entries = data.get("cpt_data", [])
         icd_codes = data.get("icd_codes", [])
 
-        # ✅ Log what was found
         print(f"[CMS1500 PARSER] CPTs found: {[entry['cpt'] for entry in cpt_entries]}")
         print(f"[CMS1500 PARSER] ICDs found: {icd_codes}")
 
@@ -215,14 +213,12 @@ async def medical_necessity_check(file: UploadFile = File(...)):
 
         results = []
 
-        # Cross-check each CPT–ICD pair using vector search
         for entry in cpt_entries:
             cpt = entry["cpt"]
             for icd in icd_codes:
                 query = f"Does CPT code {cpt} require or allow ICD code {icd}?"
                 retrieved_docs = VECTORSTORE.similarity_search(query, k=3)
 
-                # Basic match heuristic
                 match_found = any(
                     cpt in doc.page_content and icd in doc.page_content
                     for doc in retrieved_docs
